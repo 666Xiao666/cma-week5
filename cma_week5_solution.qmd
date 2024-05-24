@@ -1,0 +1,153 @@
+---
+title: "cma_week5_solution"
+author: Xiao Cui
+format: html
+---
+
+```{r}
+library(plotly)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(lubridate)
+```
+
+# Input
+```{r test function}
+testfun <- function() {
+    print("this function does nothing")
+}
+
+testfun()
+```
+If we want the function to accept some input values, we have to define them within the round brackets. For example, I specify a variable named sometext and can call this variable within the execution.
+```{r}
+testfun <- function(sometext) {
+    print(sometext)
+}
+
+testfun(sometext = "this function does slightly more, but still not much")
+```
+
+Let’s take a more practical example. Say we want a function that calculates our age if provided with the date of our birthday. We can use Sys.time() to provide today’s date and difftime() to calculate the time difference between today and our birthday.
+```{r}
+# input parameter: birthday in "YYYY-MM-DD"
+# output: age from this date till now
+my_age <- function(birthday, output_unit) {
+    difftime(Sys.time(), birthday, units = output_unit)
+}
+
+my_age(birthday = "1997-04-23", output_unit = "days")
+```
+If we want any of our parameters to have default value, we can assign an initial value to the parameter when declaring the variables within the round brackets.
+```{r}
+my_age <- function(birthday, output_unit = "days") {
+    difftime(Sys.time(), birthday, units = output_unit)
+}
+
+# if not stated otherwise, our function uses the unit "days"
+my_age("1997-04-23")
+```
+
+```{r}
+# We can still overwrite units
+my_age("1997-04-23", "hours")
+```
+
+# Task
+## Task 1: Write your own functions
+```{r BMI}
+BMI <- function(w,h) {
+ w/(h^2)
+}
+BMI(70, 1.7)
+```
+
+```{r converts degrees Celcius to Farenheight}
+Cel_Fare <- function(c) {
+  f =  c*9/5 +32
+  return(f)
+}
+Cel_Fare(5)
+```
+
+```{r euclidean distance}
+euclidean_distance <- function(x1, y1, x2, y2) {
+ sqrt((x2 - x1)^2 + (y2 - y1)^2)
+}
+euclidean_distance(0, 0, 1,1)
+```
+## Task 2: Prepare Analysis
+```{r import data}
+wildboar <- read_csv("wildschwein_BE_2056.csv")
+# time zone
+
+from <-  as.POSIXct("2015-04-01", tz = "UTC")
+to <- as.POSIXct("2015-04-15", tz = "UTC")
+
+
+wildboar <- wildboar |> filter(DatetimeUTC > from, DatetimeUTC < to) |>
+  filter(TierName %in% c("Rosa", "Sabi"))
+
+wildboar
+```
+
+```{r}
+ggplot(wildboar, aes(E, N, color = TierName)) + geom_point() + coord_equal()
+```
+
+```{r}
+wildboar <- wildboar |> mutate(
+  Datetime_round = round_date(DatetimeUTC, "15 minutes")
+)
+
+wildboar
+```
+
+```{r}
+sabi <- filter(wildboar, TierName == "Sabi")
+rosa <- filter(wildboar, TierName == "Rosa")
+```
+## Task 3: Create Join Key
+```{r join}
+# suffix here: make joined columns more readable
+joined <- full_join(sabi, rosa, by = "Datetime_round", suffix = c("_sabi", "_rosa"))
+# if distance > 100: true, else false
+joined <- joined |> mutate(distance = euclidean_distance(E_sabi, N_sabi, E_rosa, N_rosa), meet = distance < 100)
+
+joined
+```
+```{r}
+# geom_segment: connect by group
+# points: coordinates
+# take both as parameters, show both
+p <- ggplot(joined) + 
+  geom_point(aes(E_sabi, N_sabi, color = "sabi")) + 
+  geom_point(aes(E_rosa, N_rosa, color = "rosa")) +
+  geom_segment(data = filter(joined, meet), aes(E_rosa, N_rosa, xend = E_sabi, yend = N_sabi, color = "meet")) +
+  coord_equal()
+p
+```
+
+```{r}
+# make ggplot interactive
+ggplotly(p)
+```
+
+```{r}
+meanmeetpoints <- joined |> filter(meet) |> mutate(
+  E.mean = (E_rosa + E_sabi)/2, 
+  N.mean = (N_rosa + N_sabi)/2, 
+)
+```
+
+```{r}
+joined |> filter(Datetime_round < "2015-04-04") |>
+  plot_ly(x= ~E_rosa, y = ~N_rosa, z = ~Datetime_round, type = "scatter3d", mode = "lines") |> 
+  add_trace(joined, x = ~E_sabi, y = ~N_sabi, z = ~Datetime_round) |>
+  add_markers(data = meanmeetpoints, x = ~E.mean, y= ~N.mean, z = ~Datetime_round) |>   layout(scene = list(xaxis = list(title = "E"),
+                yaxis = list(title = "N"), 
+                zaxis = list(title = "Time")))
+```
+
